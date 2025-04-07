@@ -21,14 +21,15 @@ def get_paths_from_zip(zip_filepath):
             # Create dictionary with name as key and zip filepath value
             xml_contents.append({name: z.filename})
 
-        # If the zip contained another zip take it's contents
         elif name.endswith('.zip'):
             # Read inner zip to memory
             inner_zip = ZipFile(io.BytesIO(z.read(name)))
             # Read files from inner zip
-            for inner_name in inner_zip.namelist():
-                if inner_name.endswith('xml'):
-                    xml_contents.append({z.filename: {name: inner_name}})
+            xml_contents.extend(
+                {z.filename: {name: inner_name}}
+                for inner_name in inner_zip.namelist()
+                if inner_name.endswith('xml')
+            )
     return xml_contents
 
 
@@ -46,14 +47,10 @@ def get_xml_paths(filepath):
     if os.path.isdir(filepath):
         # Read all XML and zip files
         xml_contents = glob.glob(os.path.join(filepath, '*.xml'))
-        zip_contents = glob.glob(os.path.join(filepath, '*.zip'))
-
-        # Parse xml references inside zip files
-        if len(zip_contents) > 0:
+        if zip_contents := glob.glob(os.path.join(filepath, '*.zip')):
             for zfp in zip_contents:
                 xml_contents += get_paths_from_zip(zfp)
 
-    # Input is a ZipFile
     elif filepath.endswith('.zip'):
         xml_contents = get_paths_from_zip(filepath)
 
@@ -177,7 +174,7 @@ def generate_gtfs_export(gtfs_db_fp):
             calendar_dates = calendar_dates.drop('index', axis=1)
         # Drop duplicates
         calendar_dates = calendar_dates.drop_duplicates(subset=['service_id'])
-    except:
+    except Exception:
         # If data is not available pass empty DataFrame
         calendar_dates = pd.DataFrame()
 
@@ -218,18 +215,15 @@ def save_to_gtfs_zip(output_zip_fp, gtfs_data):
         for name, data in gtfs_data.items():
             fname = "{filename}.txt".format(filename=name)
 
-            if data is not None:
-                if len(data) > 0:
-                    print("Exporting:", fname)
-                    # Save
-                    buffer = data.to_csv(None, sep=',', index=False,
-                                         quotechar='"',
-                                         quoting=csv.QUOTE_NONNUMERIC)
+            if data is not None and len(data) > 0:
+                print("Exporting:", fname)
+                # Save
+                buffer = data.to_csv(None, sep=',', index=False,
+                                     quotechar='"',
+                                     quoting=csv.QUOTE_NONNUMERIC)
 
-                    zf.writestr(fname, buffer, compress_type=ZIP_DEFLATED)
-                else:
-                    print("Skipping. No data available for:", fname)
+                zf.writestr(fname, buffer, compress_type=ZIP_DEFLATED)
             else:
                 print("Skipping. No data available for:", fname)
     print("Success.")
-    print("GTFS zipfile was saved to: %s" % output_zip_fp)
+    print(f"GTFS zipfile was saved to: {output_zip_fp}")

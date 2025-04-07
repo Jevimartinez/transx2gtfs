@@ -6,15 +6,13 @@ import warnings
 def get_service_calendar_dates_exceptions(data):
     """Parses calendar dates exception info from TransXChange VehicleJourney element"""
     try:
-        non_operative_days = data.TransXChange.Services.Service.OperatingProfile.BankHolidayOperation.DaysOfNonOperation.get_elements()
+        non_operative_days = (
+            data.TransXChange.Services.Service.OperatingProfile.BankHolidayOperation.DaysOfNonOperation.get_elements()
+        )
         weekdays = []
-        for elem in non_operative_days:
-            weekdays.append(elem._name)
-        if len(weekdays) == 1:
-            return weekdays[0]
-        else:
-            return "|".join(weekdays)
-    except:
+        weekdays.extend(elem._name for elem in non_operative_days)
+        return weekdays[0] if len(weekdays) == 1 else "|".join(weekdays)
+    except Exception:
         return None
 
 
@@ -22,16 +20,15 @@ def get_calendar_dates_exceptions(vehicle_journey_element):
     """Parses calendar dates exception info from TransXChange VehicleJourney element"""
     j = vehicle_journey_element
     try:
-        non_operative_days = j.OperatingProfile.BankHolidayOperation.DaysOfNonOperation.get_elements()
+        non_operative_days = (
+            j.OperatingProfile.BankHolidayOperation.DaysOfNonOperation.get_elements()
+        )
         weekdays = []
-        for elem in non_operative_days:
-            weekdays.append(elem._name)
-        if len(weekdays) == 1:
-            return weekdays[0]
-        else:
-            return "|".join(weekdays)
-    except:
+        weekdays.extend(elem._name for elem in non_operative_days)
+        return weekdays[0] if len(weekdays) == 1 else "|".join(weekdays)
+    except Exception:
         return None
+
 
 def get_calendar_dates(gtfs_info):
     """
@@ -43,23 +40,33 @@ def get_calendar_dates(gtfs_info):
 
     There are different bank holidays in different regions in UK.
     Available regions are: 'england-and-wales', 'scotland', 'northern-ireland'
-
     """
     # Known exceptions and their counterparts in bankholiday table
-    known_holidays = {'SpringBank': 'Spring bank holiday',
-                      'LateSummerBankHolidayNotScotland': 'Summer bank holiday',
-                      'MayDay': 'Early May bank holiday',
-                      'GoodFriday': 'Good Friday',
-                      'EasterMonday': 'Easter Monday',
-                      'BoxingDay': 'Boxing Day',
-                      'ChristmasDay': 'Christmas Day',
-                      'NewYearsDay': 'New Year’s Day',
-                      }
+    known_holidays = {
+        "SpringBank": "Spring bank holiday",
+        "LateSummerBankHolidayNotScotland": "Summer bank holiday",
+        "MayDay": "Early May bank holiday",
+        "GoodFriday": "Good Friday",
+        "EasterMonday": "Easter Monday",
+        "BoxingDay": "Boxing Day",
+        "BoxingDayHoliday": "Boxing Day",
+        "ChristmasDay": "Christmas Day",
+        "ChristmasDayHoliday": "Christmas Day",
+        "ChristmasEve": "Christmas Eve",
+        "NewYearsDay": "New Year’s Day",
+        "NewYearsDayHoliday": "New Year’s Day",
+        "NewYearsEve": "New Year’s Eve",
+    }
+
+    # Check if 'non_operative_days' is present in gtfs_info
+    if 'non_operative_days' not in gtfs_info.columns:
+        warnings.warn("The column 'non_operative_days' is not present in gtfs_info. Returning None.")
+        return None
 
     # Get initial info about non-operative days
     gtfs_info = gtfs_info.copy()
-    gtfs_info = gtfs_info.dropna(subset=['non_operative_days'])
-    non_operative_values = list(gtfs_info['non_operative_days'].unique())
+    gtfs_info = gtfs_info.dropna(subset=["non_operative_days"])
+    non_operative_values = list(gtfs_info["non_operative_days"].unique())
 
     # Container for all info
     non_operatives = []
@@ -68,24 +75,24 @@ def get_calendar_dates(gtfs_info):
     for info in non_operative_values:
         # Check if info consists of multiple values
         if isinstance(info, str) and "|" in info:
-            split = info.split('|')
+            split = info.split("|")
             non_operatives += split
-        else:
-            # Add individual value
-            if info is not None and info != '':
-                non_operatives.append(info)
+        elif info is not None and info != "":
+            non_operatives.append(info)
 
     # Remove duplicates
     non_operatives = list(set(non_operatives))
 
     # Check if there exists some exceptions that are not known bank holidays
     for holiday in non_operatives:
-        if (holiday not in known_holidays.keys()) and (holiday != 'AllBankHolidays'):
-            warnings.warn("Did not recognize following holiday: %s" % holiday,
-                          UserWarning,
-                          stacklevel=2)
+        if (holiday not in known_holidays.keys()) and (holiday != "AllBankHolidays"):
+            warnings.warn(
+                f"Did not recognize following holiday: {holiday}",
+                UserWarning,
+                stacklevel=2,
+            )
 
-    if len(non_operatives) > 0:
+    if non_operatives:
         # Get bank holidays that are during the operative period of the feed
         bank_holidays = get_bank_holiday_dates(gtfs_info)
     else:
@@ -96,16 +103,12 @@ def get_calendar_dates(gtfs_info):
         return None
 
     # Otherwise produce calendar_dates data
-
-    # Select distinct (service_id) rows that have bank holiday determined
-    calendar_info = gtfs_info[['service_id', 'non_operative_days']].copy()
-    calendar_info = calendar_info.drop_duplicates(subset=['service_id'])
+    calendar_info = gtfs_info[["service_id", "non_operative_days"]].copy()
+    calendar_info = calendar_info.drop_duplicates(subset=["service_id"])
 
     # Create columns for date and exception_type
-    calendar_info['date'] = None
-
-    # The exception will always be indicating non-operative service (value 2)
-    calendar_info['exception_type'] = 2
+    calendar_info["date"] = None
+    calendar_info["exception_type"] = 2
 
     # Container for calendar_dates
     calendar_dates = pd.DataFrame()
@@ -115,14 +118,17 @@ def get_calendar_dates(gtfs_info):
         # Iterate over exception dates
         for date in bank_holidays:
             # Generate row
-            row = dict(service_id=row['service_id'],
-                       date=date,
-                       exception_type=row['exception_type'])
-            # Add to container
-            calendar_dates = calendar_dates.append(row, ignore_index=True, sort=False)
+            row_dict = {
+                "service_id": row["service_id"],
+                "date": date,
+                "exception_type": row["exception_type"],
+            }
+            # Add to container usando pd.concat
+            calendar_dates = pd.concat(
+                [calendar_dates, pd.DataFrame([row_dict])], ignore_index=True
+            )
 
     # Ensure correct datatype
-    calendar_dates['exception_type'] = calendar_dates['exception_type'].astype(int)
+    calendar_dates["exception_type"] = calendar_dates["exception_type"].astype(int)
 
     return calendar_dates
-

@@ -1,6 +1,6 @@
 import pandas as pd
 from datetime import datetime
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 
 def get_bank_holiday_dates(gtfs_info):
@@ -18,7 +18,7 @@ def get_bank_holiday_dates(gtfs_info):
     try:
         bholidays = pd.read_json(bank_holidays_url)
     # If url is unreachable use static file from the package
-    except HTTPError:
+    except (HTTPError, URLError):
         print("Could not read bank holidays via Internet, using static file instead.")
         bholidays = pd.read_json("data/bank-holidays.json")
 
@@ -27,8 +27,7 @@ def get_bank_holiday_dates(gtfs_info):
     for region in available_regions:
         region_data = pd.DataFrame(bholidays.loc['events', region])
         region_data['region'] = region
-        bank_holidays = bank_holidays.append(region_data, ignore_index=True,
-                                             sort=False)
+        bank_holidays = pd.concat([bank_holidays, region_data], ignore_index=True)
 
     # Drop duplicates
     bank_holidays = bank_holidays.drop_duplicates(subset=['date'])
@@ -37,7 +36,7 @@ def get_bank_holiday_dates(gtfs_info):
     bank_holidays = bank_holidays.sort_values(by='date').reset_index(drop=True)
 
     # Make datetime from date and make index
-    bank_holidays['dt'] = pd.to_datetime(bank_holidays['date'], infer_datetime_format=True)
+    bank_holidays['dt'] = pd.to_datetime(bank_holidays['date'])
     bank_holidays = bank_holidays.set_index('dt', drop=False)
 
     # Get start and end date of the GTFS feed
@@ -54,6 +53,5 @@ def get_bank_holiday_dates(gtfs_info):
     # If there are return get the dates
     dates = selected_bank_holidays['dt'].to_list()
     # Parse in GTFS date format
-    gtfs_dates = [date.strftime("%Y%m%d") for date in dates]
-
-    return gtfs_dates
+    
+    return [date.strftime("%Y%m%d") for date in dates]

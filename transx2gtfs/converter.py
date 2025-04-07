@@ -42,8 +42,9 @@ from time import time as timeit
 import sqlite3
 import os
 import multiprocessing
+import tempfile
 from transx2gtfs.stop_times import get_stop_times
-from transx2gtfs.stops import get_stops
+from transx2gtfs.stops import get_stops, _update_naptan_data
 from transx2gtfs.trips import get_trips
 from transx2gtfs.routes import get_routes
 from transx2gtfs.agency import get_agency
@@ -94,8 +95,8 @@ def process_files(parallel):
             continue
 
         print("=================================================================")
-        print("[%s / %s] Processing TransXChange file: %s" % (idx, len(files), xml_name))
-        print("Size: %s MB" % size)
+        print(f"[{idx} / {len(files)}] Processing TransXChange file: {xml_name}")
+        print(f"Size: {size} MB")
         # Log start time
         start_t = timeit()
 
@@ -143,8 +144,7 @@ def process_files(parallel):
                 calendar_dates.to_sql(name='calendar_dates', con=conn, index=False, if_exists='append')
         else:
             print(
-                "UserWarning: File %s did not contain valid stop_sequence data, skipping." % (
-                    xml_name)
+                f"UserWarning: File {xml_name} did not contain valid stop_sequence data, skipping."
             )
 
         # Close connection
@@ -154,7 +154,7 @@ def process_files(parallel):
         end_t = timeit()
         duration = (end_t - start_t) / 60
 
-        print("It took %s minutes." % round(duration, 1))
+        print(f"It took {round(duration, 1)} minutes.")
 
         # ===================
         # ===================
@@ -162,7 +162,7 @@ def process_files(parallel):
 
 
 def convert(input_filepath, output_filepath, append_to_existing=False, worker_cnt=None,
-            file_size_limit=2000):
+            file_size_limit=2000, update_naptan=False):
     """
     Converts TransXchange formatted schedule data into GTFS feed.
 
@@ -188,10 +188,20 @@ def convert(input_filepath, output_filepath, append_to_existing=False, worker_cn
     target_dir = os.path.dirname(output_filepath)
     gtfs_db = os.path.join(target_dir, "gtfs.db")
 
+    if not update_naptan:
+        naptan_fp = os.path.join(tempfile.gettempdir(), 'transx2gtfs', 'NaPTAN_data.csv')
+        if not os.path.exists(naptan_fp):
+            print("Actualizando datos de NaPTAN...")
+            _update_naptan_data()
+        else:
+            print(f"Usando datos existentes de NaPTAN en: {naptan_fp}")
+    else: 
+        print("Actualizando datos de NaPTAN...")
+        _update_naptan_data()
+
     # If append to database is false remove previous gtfs-database if it exists
-    if append_to_existing == False:
-        if os.path.exists(gtfs_db):
-            os.remove(gtfs_db)
+    if append_to_existing == False and os.path.exists(gtfs_db):
+        os.remove(gtfs_db)
 
     # Retrieve all TransXChange files
     files = get_xml_paths(input_filepath)
@@ -214,7 +224,7 @@ def convert(input_filepath, output_filepath, append_to_existing=False, worker_cn
     tot_end_t = timeit()
     tot_duration = (tot_end_t - tot_start_t) / 60
     print("===========================================================")
-    print("It took %s minutes in total." % round(tot_duration, 1))
+    print(f"It took {round(tot_duration, 1)} minutes in total.")
 
     # Generate output dictionary
     gtfs_data = generate_gtfs_export(gtfs_db)

@@ -15,10 +15,7 @@ def create_workers(input_files, worker_cnt=None, gtfs_db=None, file_size_limit=1
     if worker_cnt is not None and isinstance(worker_cnt, int):
         core_cnt=worker_cnt
     elif worker_cnt is None:
-        if cpu_count()==1:
-            core_cnt = cpu_count()
-        else:
-            core_cnt = cpu_count()-1
+        core_cnt = cpu_count() if cpu_count()==1 else cpu_count()-1
     else:
         assert isinstance(worker_cnt, int), "The number of workers should be passed as an integer value."
 
@@ -33,7 +30,7 @@ def create_workers(input_files, worker_cnt=None, gtfs_db=None, file_size_limit=1
     start_i = 0
     end_i = batch_size
 
-    for i in range(0, core_cnt):
+    for i in range(core_cnt):
         # On the last iteration ensure that all the rest will be added
         if i == core_cnt - 1:
             # Slice the list
